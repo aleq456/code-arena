@@ -1,11 +1,145 @@
+// Main app - handles navigation between lobby and duel room
+
+import { useState, useEffect } from "react"
 import { Navbar } from "@/components/navbar"
 import { HeroSection } from "@/components/hero-section"
 import { DuelLobby } from "@/components/duel-lobby"
 import { ReplaysSection } from "@/components/replays-section"
 import { DashboardSection } from "@/components/dashboard-section"
 import { Footer } from "@/components/footer"
+import { DuelRoom } from "@/components/duel-room"
+import { supabase } from "@/lib/supabase"
+import { findOrCreateDuel } from "@/lib/matchmaking"
+import { Loader2, Swords } from "lucide-react"
+
+// The two "pages" of our app
+type AppView = "lobby" | "matchmaking" | "duel"
+
+interface ActiveDuel {
+  duelId: string
+  problem: any
+}
 
 export default function App() {
+  const [view, setView] = useState<AppView>("lobby")
+  const [activeDuel, setActiveDuel] = useState<ActiveDuel | null>(null)
+  const [matchmakingStatus, setMatchmakingStatus] = useState("")
+  const [user, setUser] = useState<any>(null)
+
+  // Track logged in user
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => setUser(session?.user ?? null)
+    )
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function handleStartDuel() {
+  if (!user) {
+    alert("Please sign in first!")
+    return
+  }
+
+  setView("matchmaking")
+  setMatchmakingStatus("🤖 Generating problem with AI...")
+
+  try {
+    const { duelId, problem, isNewDuel } = await findOrCreateDuel(user.id)
+
+    if (isNewDuel) {
+      setMatchmakingStatus("Waiting for opponent...")
+
+      let found = false
+
+      const pollInterval = setInterval(async () => {
+        const { data: duel } = await supabase
+          .from("duels")
+          .select("*")
+          .eq("id", duelId)
+          .single()
+
+        if (duel?.player2_id !== null || duel?.status === "active") {
+          found = true
+          clearInterval(pollInterval)
+          // Use the already generated problem
+          setActiveDuel({ duelId, problem })
+          setView("duel")
+        }
+      }, 2000)
+
+      setTimeout(async () => {
+        if (!found) {
+          clearInterval(pollInterval)
+          await supabase.from("duels").delete().eq("id", duelId)
+          setView("lobby")
+          setMatchmakingStatus("")
+          alert("No opponent found. Try again!")
+        }
+      }, 60000)
+
+    } else {
+      // Joined existing duel - start immediately
+      setActiveDuel({ duelId, problem })
+      setView("duel")
+    }
+
+  } catch (err) {
+    console.error("Matchmaking error:", err)
+    setView("lobby")
+    alert("Something went wrong. Try again!")
+  }
+}
+
+  // Exit duel and go back to lobby
+  function handleExitDuel() {
+    setActiveDuel(null)
+    setView("lobby")
+  }
+
+  // Show duel room
+  if (view === "duel" && activeDuel) {
+    return (
+      <DuelRoom
+        problem={activeDuel.problem}
+        duelId={activeDuel.duelId}
+        onExit={handleExitDuel}
+      />
+    )
+  }
+
+  // Show matchmaking screen
+  if (view === "matchmaking") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative mb-8">
+            <Swords className="w-16 h-16 text-neon-purple mx-auto animate-pulse" />
+            <div className="absolute inset-0 w-16 h-16 mx-auto text-neon-purple blur-md opacity-50">
+              <Swords className="w-16 h-16" />
+            </div>
+          </div>
+          <h2 className="font-mono text-2xl font-bold text-foreground mb-4">
+            FINDING OPPONENT
+          </h2>
+          <div className="flex items-center justify-center gap-3 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin text-neon-purple" />
+            <span className="font-mono text-sm">{matchmakingStatus}</span>
+          </div>
+          <button
+            onClick={() => setView("lobby")}
+            className="mt-8 font-mono text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            CANCEL
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Show main lobby
   return (
     <main className="min-h-screen bg-background relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
@@ -15,7 +149,8 @@ export default function App() {
       </div>
       <div className="relative z-10">
         <Navbar />
-        <HeroSection />
+        {/* Pass handleStartDuel down to HeroSection */}
+        <HeroSection onStartDuel={handleStartDuel} />
         <DuelLobby />
         <ReplaysSection />
         <DashboardSection />

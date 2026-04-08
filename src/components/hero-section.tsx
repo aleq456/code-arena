@@ -3,7 +3,12 @@
 import { Button } from "@/components/ui/button"
 import { Zap, Trophy, Users, ChevronRight } from "lucide-react"
 
-export function HeroSection() {
+// Add onStartDuel prop so App.tsx can handle the button click
+interface HeroSectionProps {
+  onStartDuel: () => void
+}
+
+export function HeroSection({ onStartDuel }: HeroSectionProps) {
   return (
     <section className="relative min-h-screen flex items-center justify-center pt-16 px-4">
       <div className="max-w-5xl mx-auto text-center">
@@ -13,13 +18,13 @@ export function HeroSection() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neon-cyan opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-neon-cyan"></span>
           </span>
-          <span className="font-mono text-sm text-neon-cyan">2,847 DEVS ONLINE</span>
+          <span className="font-mono text-sm text-neon-cyan">0 DEVS ONLINE</span>
         </div>
 
         {/* Main title */}
         <h1 className="font-mono text-5xl sm:text-7xl lg:text-8xl font-bold mb-6 tracking-tight">
           <span className="text-glow-purple text-neon-purple">CODE</span>
-          <span className="text-foreground">_</span>
+          <span className="text-foreground"> </span>
           <span className="text-glow-blue text-neon-blue">ARENA</span>
         </h1>
 
@@ -36,6 +41,7 @@ export function HeroSection() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <Button 
             size="lg" 
+            onClick={onStartDuel}
             className="font-mono text-lg px-8 py-6 bg-neon-purple hover:bg-neon-purple/80 text-white glow-purple group"
           >
             <Zap className="w-5 h-5 mr-2 group-hover:animate-pulse" />
