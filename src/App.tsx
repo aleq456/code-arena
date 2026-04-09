@@ -38,60 +38,67 @@ export default function App() {
   }, [])
 
   async function handleStartDuel() {
-  if (!user) {
-    alert("Please sign in first!")
-    return
-  }
+    if (!user) {
+      alert("Please sign in first!")
+      return
+    }
 
-  setView("matchmaking")
-  setMatchmakingStatus("🤖 Generating problem with AI...")
+    setView("matchmaking")
+    setMatchmakingStatus("Searching for opponent...")
 
-  try {
-    const { duelId, problem, isNewDuel } = await findOrCreateDuel(user.id)
+    try {
+      const { duelId, problem, isNewDuel } = await findOrCreateDuel(user.id)
 
-    if (isNewDuel) {
+      if (!isNewDuel) {
+        // Joined someone else's duel - start immediately
+        setActiveDuel({ duelId, problem })
+        setView("duel")
+        return
+      }
+
+      // We created a duel - poll until opponent joins
       setMatchmakingStatus("Waiting for opponent...")
 
       let found = false
+      let attempts = 0
+      const maxAttempts = 30 // 30 x 2 seconds = 60 seconds max
 
       const pollInterval = setInterval(async () => {
+        attempts++
+
+        // Stop if already found or timed out
+        if (found || attempts >= maxAttempts) {
+          clearInterval(pollInterval)
+          if (!found) {
+            await supabase.from("duels").delete().eq("id", duelId)
+            setView("lobby")
+            alert("No opponent found. Try again!")
+          }
+          return
+        }
+
         const { data: duel } = await supabase
           .from("duels")
           .select("*")
           .eq("id", duelId)
           .single()
 
-        if (duel?.player2_id !== null || duel?.status === "active") {
+        console.log("🔄 Poll:", duel?.status, "player2:", duel?.player2_id)
+
+        if (duel?.player2_id) {
           found = true
           clearInterval(pollInterval)
-          // Use the already generated problem
           setActiveDuel({ duelId, problem })
           setView("duel")
         }
       }, 2000)
 
-      setTimeout(async () => {
-        if (!found) {
-          clearInterval(pollInterval)
-          await supabase.from("duels").delete().eq("id", duelId)
-          setView("lobby")
-          setMatchmakingStatus("")
-          alert("No opponent found. Try again!")
-        }
-      }, 60000)
-
-    } else {
-      // Joined existing duel - start immediately
-      setActiveDuel({ duelId, problem })
-      setView("duel")
+    } catch (err) {
+      console.error("Matchmaking error:", err)
+      setView("lobby")
+      alert("Something went wrong. Try again!")
     }
-
-  } catch (err) {
-    console.error("Matchmaking error:", err)
-    setView("lobby")
-    alert("Something went wrong. Try again!")
   }
-}
 
   // Exit duel and go back to lobby
   function handleExitDuel() {
@@ -149,7 +156,6 @@ export default function App() {
       </div>
       <div className="relative z-10">
         <Navbar />
-        {/* Pass handleStartDuel down to HeroSection */}
         <HeroSection onStartDuel={handleStartDuel} />
         <DuelLobby />
         <ReplaysSection />
